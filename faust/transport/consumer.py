@@ -359,6 +359,8 @@ class Consumer(Service, ConsumerT):
     # Mapping of TP to list of gap in offsets.
     _gap: MutableMapping[TP, List[int]]
 
+    _gap_range: Mapping[TP, Tuple]
+
     # Mapping of TP to list of acked offsets.
     _acked: MutableMapping[TP, List[int]]
 
@@ -432,6 +434,7 @@ class Consumer(Service, ConsumerT):
             commit_livelock_soft_timeout or
             self.app.conf.broker_commit_livelock_soft_timeout)
         self._gap = defaultdict(list)
+        self._gap_range = defaultdict(lambda: None)
         self._acked = defaultdict(list)
         self._acked_index = defaultdict(set)
         self._read_offset = defaultdict(lambda: None)
@@ -966,13 +969,15 @@ class Consumer(Service, ConsumerT):
         # the return value will be: 36
         if acked:
             max_offset = max(acked)
-            gap_for_tp = self._gap[tp]
-            if gap_for_tp:
-                gap_index = next((i for i, x in enumerate(gap_for_tp)
-                                  if x > max_offset), len(gap_for_tp))
-                gaps = gap_for_tp[:gap_index]
+            gap_range_for_tp = self._gap_range[tp]
+            if gap_range_for_tp:
+                gaps = (
+                    gap for gap in range(
+                        gap_range_for_tp[0], gap_range_for_tp[1],
+                    ) if gap > max_offset
+                )
                 acked.extend(gaps)
-                gap_for_tp[:gap_index] = []
+
             acked.sort()
             # Note: acked is always kept sorted.
             # find first list of consecutive numbers
@@ -990,10 +995,19 @@ class Consumer(Service, ConsumerT):
 
     def _add_gap(self, tp: TP, offset_from: int, offset_to: int) -> None:
         committed = self._committed_offset[tp]
-        gap_for_tp = self._gap[tp]
-        for offset in range(offset_from, offset_to):
-            if committed is None or offset > committed:
-                gap_for_tp.append(offset)
+        if committed and committed > offset_to:
+            return
+
+        gap_range_for_tp = self._gap_range[tp]
+        if gap_range_for_tp:
+            new_gap_range_for_tp = (
+                min(gap_range_for_tp[0], max(offset_from, committed + 1)),
+                max(gap_range_for_tp[1], offset_to),
+            )
+        else:
+            new_gap_range_for_tp = (max(offset_from, committed + 1), offset_to)
+
+        self._gap_range[tp] = new_gap_range_for_tp
 
     async def _drain_messages(
             self, fetcher: ServiceT) -> None:  # pragma: no cover

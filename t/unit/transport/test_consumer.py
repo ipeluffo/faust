@@ -959,17 +959,18 @@ class test_Consumer:
         consumer._acked[tp] = acked
         assert consumer._new_offset(tp) == expected_offset
 
-    @pytest.mark.parametrize('tp,acked,gaps,expected_offset', [
-        (TP1, [], [], None),
-        (TP1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [], 10),
-        (TP1, [1, 2, 3, 4, 5, 6, 7, 8, 10], [9], 10),
-        (TP1, [1, 2, 3, 4, 6, 7, 8, 10], [5], 8),
-        (TP1, [1, 3, 4, 6, 7, 8, 10], [2, 5, 9], 10),
+    @pytest.mark.parametrize('tp,acked,gaps,gap_range,expected_offset', [
+        (TP1, [], [], None, None),
+        (TP1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [], None, 10),
+        (TP1, [1, 2, 3, 4, 5, 6, 7, 8, 10], [9], (9, 10), 10),
+        (TP1, [1, 2, 3, 4, 6, 7, 8, 10], [5], (5, 6), 8),
+        (TP1, [1, 3, 4, 6, 7, 8, 10], [2, 5, 9], None, 10),
     ])
     def test_new_offset_with_gaps(self, tp, acked, gaps,
-                                  expected_offset, *, consumer):
+                                  gap_range, expected_offset, *, consumer):
         consumer._acked[tp] = acked
         consumer._gap[tp] = gaps
+        consumer._gap_range[tp] = gap_range
         assert consumer._new_offset(tp) == expected_offset
 
     @pytest.mark.asyncio
