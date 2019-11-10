@@ -359,7 +359,7 @@ class Consumer(Service, ConsumerT):
     # Mapping of TP to list of gap in offsets.
     _gap: MutableMapping[TP, List[int]]
 
-    _gap_range: Mapping[TP, Tuple]
+    _gap_range: MutableMapping[TP, Optional[Tuple]]
 
     # Mapping of TP to list of acked offsets.
     _acked: MutableMapping[TP, List[int]]
@@ -971,12 +971,16 @@ class Consumer(Service, ConsumerT):
             max_offset = max(acked)
             gap_range_for_tp = self._gap_range[tp]
             if gap_range_for_tp:
-                gaps = (
+                gaps = [
                     gap for gap in range(
                         gap_range_for_tp[0], gap_range_for_tp[1],
                     ) if gap > max_offset
-                )
-                acked.extend(gaps)
+                ]
+                if not gaps:
+                    gaps = range(gap_range_for_tp[0], gap_range_for_tp[1])
+                for gap in gaps:
+                    if gap not in acked:
+                        acked.append(gap)
 
             acked.sort()
             # Note: acked is always kept sorted.
@@ -1002,10 +1006,12 @@ class Consumer(Service, ConsumerT):
         if gap_range_for_tp:
             new_gap_range_for_tp = (
                 min(gap_range_for_tp[0], max(offset_from, committed + 1)),
-                max(gap_range_for_tp[1], offset_to),
+                max(gap_range_for_tp[1], offset_to + 1),
             )
         else:
-            new_gap_range_for_tp = (max(offset_from, committed + 1), offset_to)
+            new_gap_range_for_tp = (
+                max(offset_from, committed + 1), offset_to + 1,
+            )
 
         self._gap_range[tp] = new_gap_range_for_tp
 
